@@ -1,0 +1,10 @@
+.env
+
+# --- 2. Python / Flask ---
+venv/
+__pycache__/
+*.pyc
+
+# --- 4. OS/IDE ---
+.DS_Store
+.vscode/

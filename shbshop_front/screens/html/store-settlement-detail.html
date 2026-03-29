@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>매장 거래 정산 상세</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: #f2f2f2;
+    }
+    h1 {
+      color: #0091da;
+    }
+    .info-box {
+      background: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    .item-list {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .item-card {
+      width: 180px;
+      background: white;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .item-card img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      margin-bottom: 10px;
+      border-radius: 4px;
+    }
+    .item-card p {
+      font-size: 14px;
+      margin: 3px 0;
+      color: #333;
+    }
+    .item-card p strong {
+      color: #000;
+    }
+    .action-box {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      margin-bottom: 15px;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      font-size: 14px;
+    }
+    input[type="file"] {
+      display: block;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .btn {
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: bold;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-right: 10px;
+      transition: background-color 0.3s ease;
+    }
+    .btn-approve {
+      background-color: #28a745;
+      color: white;
+    }
+    .btn-approve:hover {
+      background-color: #218838;
+    }
+    .btn-reject {
+      background-color: #dc3545;
+      color: white;
+    }
+    .btn-reject:hover {
+      background-color: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <h1>매장 거래 정산 상세 보기</h1>
+
+  <div class="info-box" id="infoBox">
+    <p>데이터를 불러오는 중...</p>
+  </div>
+
+  <h2>거래 항목 목록</h2>
+  <div class="item-list" id="itemList">
+    <p>데이터를 불러오는 중...</p>
+  </div>
+
+  <h2>정산 처리</h2>
+  <div class="action-box">
+    <label for="reason">거부 사유</label>
+    <textarea id="reason" placeholder="거부 사유를 입력하세요 (정산 시 생략 가능)"></textarea>
+
+    <label for="photoInput">정산 결과 첨부 (선택 사항)</label>
+    <input type="file" id="photoInput" accept="image/*" />
+
+    <button class="btn btn-approve" onclick="submitDecision(2)">정산 승인</button>
+    <button class="btn btn-reject" onclick="submitDecision(3)">정산 거부</button>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get('kind');
+    const idx = params.get('idx');
+    const token = localStorage.getItem('jwtToken');
+
+    if (!kind || !idx || !token) {
+      alert('잘못된 접근입니다. 필요한 정보가 부족합니다.');
+      window.history.back();
+    }
+
+    async function fetchSettlementDetail() {
+      try {
+        const apiUrl = `https://www.shbshop.store/admin/check-payment/st/${idx}`;
+        console.log(`Fetching settlement detail from: ${apiUrl}`);
+
+        const res = await fetch(apiUrl, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('API 응답 오류:', res.status, errorText);
+          throw new Error(`데이터 요청 실패: ${res.status}`);
+        }
+
+        const data = await res.json();
+        console.log('매장 정산 상세 데이터:', data);
+
+        const settlementInfo = data.payment_info;
+        const transactionList = data.book_list;
+
+        const infoBox = document.getElementById('infoBox');
+        if (settlementInfo) {
+          infoBox.innerHTML = `
+            <p><strong>매장명:</strong> ${settlementInfo.shopName ?? 'N/A'}</p>
+            <p><strong>정산 금액:</strong> ${settlementInfo.price ? settlementInfo.price.toLocaleString() + '원' : '금액 없음'}</p>
+            <p><strong>정산 상태:</strong> ${
+              settlementInfo.state === 10 ? '정산 진행 중' :
+              settlementInfo.state === 11 ? '정산 완료' :
+              settlementInfo.reason ?? 'N/A'
+            }</p>
+            <p><strong>등록일:</strong> ${settlementInfo.createAt ? new Date(settlementInfo.createAt).toLocaleString() : '날짜 없음'}</p>
+            <p><strong>계좌 정보:</strong> ${settlementInfo.bankname ?? ''} ${settlementInfo.bankaccount ?? ''}</p>
+          `;
+
+          const actionBox = document.querySelector('.action-box');
+          if (settlementInfo.state === 11) {
+            actionBox.style.display = 'none';
+          } else {
+            actionBox.style.display = 'block';
+          }
+        } else {
+          infoBox.innerHTML = '<p>정산 요약 정보를 불러올 수 없습니다.</p>';
+        }
+
+        const itemList = document.getElementById('itemList');
+        itemList.innerHTML = '';
+        if (Array.isArray(transactionList) && transactionList.length > 0) {
+          itemList.innerHTML = transactionList.map(item => `
+            <div class="item-card">
+              <img src="https://www.shbshop.store${item.img}" alt="${item.title ?? '항목 이미지'}" />
+              <p><strong>${item.title ?? '항목 이름 없음'}</strong></p>
+              <p>${item.price ? item.price.toLocaleString() + '원' : '가격 없음'}</p>
+            </div>
+          `).join('');
+        } else {
+          itemList.innerHTML = '<p>거래 항목 목록이 없습니다.</p>';
+        }
+
+      } catch (err) {
+        console.error('정산 상세 정보를 불러오는 중 에러 발생:', err);
+        alert('정산 정보를 불러올 수 없습니다.');
+      }
+    }
+
+    async function submitDecision(decision) {
+      const reason = document.getElementById('reason').value;
+      const photoInput = document.getElementById('photoInput');
+      const file = photoInput.files[0];
+
+      if (decision === 3 && !reason.trim()) {
+        alert('정산 거부 시 사유를 입력해야 합니다.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('decision', decision);
+      formData.append('reason', reason || '');
+
+      if (file) {
+        formData.append('completePhoto', file);
+      }
+
+      try {
+        const reviewApiUrl = `https://www.shbshop.store/admin/check-payment/st/${idx}/review`;
+        console.log(`Submitting decision to: ${reviewApiUrl}`);
+
+        const res = await fetch(reviewApiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('제출 API 응답 오류:', res.status, errText);
+          throw new Error(`처리 실패: ${res.status} - ${errText}`);
+        }
+
+        alert('정산 처리가 완료되었습니다.');
+        location.reload();
+
+      } catch (err) {
+        console.error('정산 처리 제출 중 오류 발생:', err);
+        alert('정산 처리 중 오류가 발생했습니다.\n' + err.message);
+      }
+    }
+
+    fetchSettlementDetail();
+  </script>
+</body>
+</html>

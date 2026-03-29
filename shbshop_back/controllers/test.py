@@ -1,0 +1,969 @@
+from flask import Blueprint, request, jsonify, current_app
+import os
+from dotenv import load_dotenv
+from sqlalchemy import desc
+from werkzeug.utils import secure_filename
+from uuid import uuid4
+from werkzeug.security import generate_password_hash, check_password_hash
+from enum import Enum
+
+# 에디터에서 에러 표시 나와도 무시하면 됩니다.
+# 절대 경로 파악이 안 되는 것. 실행은 정상적으로 됩니다.
+from models import Personal, Commercial, Commercialcert, Adminacc, Shop, Pbooktrade, Cbooktrade, Sbooktrade, Vaild4pur, Vaild4cur, Modiaddress, Preceipt2p, Preceipt2s, Creceipt2p, Creceipt2s
+from extensions import db
+
+test_bp = Blueprint("test", __name__)
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+P_PROFILE_UPLOAD_FOLDER = "static/user/personal"
+C_PROFILE_UPLOAD_FOLDER = "static/user/commercial"
+S_IMAGE_UPLOAD_FOLDER = "static/shop"
+LICENCE_UPLOAD_FOLDER = "static/licence"
+PBOOK_UPLOAD_FOLDER = "static/product/personal"
+CBOOK_UPLOAD_FOLDER = "static/product/commercial"
+SBOOK_UPLOAD_FOLDER = "static/product/shop"
+PAYMENT_UPLOAD_FOLDER = "static/paymentphoto"
+BANK_UPLOAD_FOLDER = "static/account"
+
+class UserType(Enum):
+    PERSONAL = 1
+    COMMERCIAL = 2
+    ADMIN = 3
+
+
+@test_bp.route("/add-personal", methods=["POST"])
+def add_personal():
+    name = request.form.get("name")
+    birth = request.form.get("birth")
+    tel = request.form.get("tel")
+    email = request.form.get("email")
+    password = request.form.get("password")
+    nickname = request.form.get("nickname")
+    address = request.form.get("address")
+    imgfile = request.files.get("imgfile")
+
+    exPUser = db.session.query(Personal).filter_by(email=email).first()
+    exCUser = db.session.query(Commercial).filter_by(email=email).first()
+
+    if exPUser:
+        return jsonify({"message": "이미 가입된 회원입니다."}), 403
+    if exCUser:
+        return jsonify({"message": "상업회원으로 가입되어 있습니다."}), 403
+
+    filename = secure_filename(f"{uuid4().hex}_{imgfile.filename}")
+    save_path = os.path.join(P_PROFILE_UPLOAD_FOLDER, filename)
+        
+    try:
+        imgfile.save(save_path)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    profile_url = f"/{P_PROFILE_UPLOAD_FOLDER}/{filename}"
+
+    region = address.split()[0] + "-" + address.split()[1]
+    hashed_pw = generate_password_hash(password)
+
+    new_user = Personal(
+        name=name,
+        birth = birth,
+        tel = tel,
+        email=email,
+        password=hashed_pw,
+        nickname = nickname,
+        address = address,
+        region = region,
+        img = profile_url
+    )
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"message": "회원가입 완료"}), 201
+
+@test_bp.route("/add-commercial", methods=["POST"])
+def add_commercial():
+    name = request.form.get("name")
+    presidentName = request.form.get("presidentName")
+    businessmanName = request.form.get("businessmanName")
+    birth = request.form.get("birth")
+    tel = request.form.get("tel")
+    email = request.form.get("email")
+    businessEmail = request.form.get("businessEmail")
+    password = request.form.get("password")
+    nickname = request.form.get("nickname")
+    address = request.form.get("address")
+    coNumber = request.form.get("coNumber")
+    imgfile = request.files.get("imgfile")
+    licence = request.files.get("licence")
+
+    exPUser = db.session.query(Personal).filter_by(email=email).first()
+    exCUser = db.session.query(Commercial).filter_by(email=email).first()
+
+    if exPUser:
+        return jsonify({"message": "이미 가입된 회원입니다."}), 403
+    if exCUser:
+        return jsonify({"message": "상업회원으로 가입되어 있습니다."}), 403
+    
+    hashed_pw = generate_password_hash(password)
+    
+    filename = secure_filename(f"{uuid4().hex}_{imgfile.filename}")
+    save_path = os.path.join(C_PROFILE_UPLOAD_FOLDER, filename)
+        
+    try:
+        imgfile.save(save_path)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    profile_url = f"/{C_PROFILE_UPLOAD_FOLDER}/{filename}"
+
+    pdf_filename = secure_filename(f"{uuid4().hex}_{licence.filename}")
+    pdf_save_path = os.path.join(LICENCE_UPLOAD_FOLDER, pdf_filename)
+
+    try:
+        licence.save(pdf_save_path)
+    except Exception as e:
+        return jsonify({"error": f"PDF 저장 실패: {str(e)}"}), 500
+
+    pdf_url = f"/{LICENCE_UPLOAD_FOLDER}/{pdf_filename}"
+
+    region = address.split()[0] + "-" + address.split()[1]
+
+    new_user = Commercial(
+        name = name,
+        presidentName = presidentName,
+        businessmanName = businessmanName,
+        birth = birth,
+        tel = tel,
+        email=email,
+        businessEmail = businessEmail,
+        password=hashed_pw,
+        nickname = nickname,
+        address = address,
+        img=profile_url,
+        licence=pdf_url,
+        coNumber=coNumber,
+        region=region
+    )
+    db.session.add(new_user)
+    db.session.commit()
+
+    cuser = db.session.query(Commercial).filter_by(email=email).first()
+
+    new_certReq = Commercialcert(
+        name=name,
+        presidentName = presidentName,
+        businessmanName = businessmanName,
+        birth = birth,
+        tel = tel,
+        email=email,
+        businessEmail = businessEmail,
+        address = address,
+        coNumber=coNumber,
+        licence=pdf_url,
+        cid=cuser.cid
+    )
+
+    db.session.add(new_certReq)
+    db.session.commit()
+
+    return jsonify({"message": "회원가입 완료"}), 201
+
+@test_bp.route("/add-admin", methods=["POST"])
+def add_admin():
+    data = request.get_json()
+    name = data.get("name")
+    acc = data.get("acc")
+    password = data.get("password")
+    
+    hashed_pw = generate_password_hash(password)
+
+    new_user = Adminacc(
+        name = name,
+        acc = acc,
+        password=hashed_pw
+    )
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"message": "회원가입 완료"}), 201
+
+
+@test_bp.route("/add-shop", methods=["POST"])
+def add_shop():
+    cid = request.form.get("cid")
+    cid = int(cid)
+    presidentName = request.form.get("presidentName")
+    businessmanName = request.form.get("businessmanName")
+    shopName = request.form.get("shopName")
+    shoptel = request.form.get("shoptel")
+    businessEmail = request.form.get("businessEmail")
+    address = request.form.get("address")
+    region = address.split()[0] + "-" + address.split()[1]
+    shopOpen = request.form.get("shopOpen")
+    shopClose = request.form.get("shopClose")
+    holiday = request.form.get("holiday")
+    etc = request.form.get("etc")
+    imgfile1 = request.files.get("imgfile1")
+    imgfile2 = request.files.get("imgfile2")
+    imgfile3 = request.files.get("imgfile3")
+    
+    filename1 = secure_filename(f"{uuid4().hex}_{imgfile1.filename}")
+    save_path1 = os.path.join(S_IMAGE_UPLOAD_FOLDER, filename1)
+
+    filename2 = secure_filename(f"{uuid4().hex}_{imgfile2.filename}")
+    save_path2 = os.path.join(S_IMAGE_UPLOAD_FOLDER, filename2)
+
+    filename3 = secure_filename(f"{uuid4().hex}_{imgfile3.filename}")
+    save_path3 = os.path.join(S_IMAGE_UPLOAD_FOLDER, filename3)
+        
+    try:
+        imgfile1.save(save_path1)
+        imgfile2.save(save_path2)
+        imgfile3.save(save_path3)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    shopimg_url1 = f"/{S_IMAGE_UPLOAD_FOLDER}/{filename1}"
+    shopimg_url2 = f"/{S_IMAGE_UPLOAD_FOLDER}/{filename2}"
+    shopimg_url3 = f"/{S_IMAGE_UPLOAD_FOLDER}/{filename3}"   
+
+    new_shop = Shop(
+        cid = cid,
+        presidentName = presidentName,
+        businessmanName = businessmanName,
+        shopName = shopName,
+        shoptel = shoptel,
+        businessEmail = businessEmail,
+        address = address,
+        region=region,
+        open=shopOpen,
+        close=shopClose,
+        holiday=holiday,
+        etc=etc,
+        shopimg1=shopimg_url1,
+        shopimg2=shopimg_url2,
+        shopimg3=shopimg_url3
+    )
+    db.session.add(new_shop)
+    db.session.commit()
+
+    return jsonify({"message": "가게추가 완료"}), 201
+
+@test_bp.route("/modify-state/<int:userId>", methods=["PUT"])
+def change_state(userId):
+    cUser = db.session.query(Commercial).filter_by(cid = userId).first()
+    
+    cUser.state = 2
+    db.session.commit()
+
+    return jsonify({"message": "주소 변경 완료"}), 200
+
+@test_bp.route("/add-pbook", methods=["POST"])
+def add_pbook():
+    pid = request.form.get("pid")
+    pid = int(pid)
+    title = request.form.get("title")
+    author = request.form.get("author")
+    publish = request.form.get("publish")
+    isbn = request.form.get("isbn")
+    price = request.form.get("price")
+    price = int(price)
+    detail = request.form.get("detail")
+    region = request.form.get("region")
+    imgfile1 = request.files.get("imgfile1")
+    imgfile2 = request.files.get("imgfile2")
+    imgfile3 = request.files.get("imgfile3")
+    
+    filename1 = secure_filename(f"{uuid4().hex}_{imgfile1.filename}")
+    save_path1 = os.path.join(PBOOK_UPLOAD_FOLDER, filename1)
+
+    filename2 = secure_filename(f"{uuid4().hex}_{imgfile2.filename}")
+    save_path2 = os.path.join(PBOOK_UPLOAD_FOLDER, filename2)
+
+    filename3 = secure_filename(f"{uuid4().hex}_{imgfile3.filename}")
+    save_path3 = os.path.join(PBOOK_UPLOAD_FOLDER, filename3)
+        
+    try:
+        imgfile1.save(save_path1)
+        imgfile2.save(save_path2)
+        imgfile3.save(save_path3)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    img_url1 = f"/{PBOOK_UPLOAD_FOLDER}/{filename1}"
+    img_url2 = f"/{PBOOK_UPLOAD_FOLDER}/{filename2}"
+    img_url3 = f"/{PBOOK_UPLOAD_FOLDER}/{filename3}"   
+
+    new_pbook = Pbooktrade(
+        pid = pid,
+        title = title,
+        author = author,
+        publish = publish,
+        isbn = isbn,
+        price = price,
+        detail = detail,
+        region = region,
+        img1 = img_url1,
+        img2 = img_url2,
+        img3 = img_url3
+    )
+    db.session.add(new_pbook)
+    db.session.commit()
+
+    return jsonify({"message": "책 추가 완료"}), 201
+
+@test_bp.route("/add-cbook", methods=["POST"])
+def add_cbook():
+    cid = request.form.get("cid")
+    cid = int(cid)
+    title = request.form.get("title")
+    author = request.form.get("author")
+    publish = request.form.get("publish")
+    isbn = request.form.get("isbn")
+    price = request.form.get("price")
+    price = int(price)
+    detail = request.form.get("detail")
+    region = request.form.get("region")
+    imgfile1 = request.files.get("imgfile1")
+    imgfile2 = request.files.get("imgfile2")
+    imgfile3 = request.files.get("imgfile3")
+    
+    filename1 = secure_filename(f"{uuid4().hex}_{imgfile1.filename}")
+    save_path1 = os.path.join(CBOOK_UPLOAD_FOLDER, filename1)
+
+    filename2 = secure_filename(f"{uuid4().hex}_{imgfile2.filename}")
+    save_path2 = os.path.join(CBOOK_UPLOAD_FOLDER, filename2)
+
+    filename3 = secure_filename(f"{uuid4().hex}_{imgfile3.filename}")
+    save_path3 = os.path.join(CBOOK_UPLOAD_FOLDER, filename3)
+        
+    try:
+        imgfile1.save(save_path1)
+        imgfile2.save(save_path2)
+        imgfile3.save(save_path3)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    img_url1 = f"/{CBOOK_UPLOAD_FOLDER}/{filename1}"
+    img_url2 = f"/{CBOOK_UPLOAD_FOLDER}/{filename2}"
+    img_url3 = f"/{CBOOK_UPLOAD_FOLDER}/{filename3}"   
+
+    new_cbook = Cbooktrade(
+        cid = cid,
+        title = title,
+        author = author,
+        publish = publish,
+        isbn = isbn,
+        price = price,
+        detail = detail,
+        region = region,
+        img1 = img_url1,
+        img2 = img_url2,
+        img3 = img_url3
+    )
+    db.session.add(new_cbook)
+    db.session.commit()
+
+    return jsonify({"message": "책 추가 완료"}), 201
+
+@test_bp.route("/add-sbook", methods=["POST"])
+def add_sbook():
+    sid = request.form.get("sid")
+    sid = int(sid)
+    title = request.form.get("title")
+    author = request.form.get("author")
+    publish = request.form.get("publish")
+    isbn = request.form.get("isbn")
+    price = request.form.get("price")
+    price = int(price)
+    detail = request.form.get("detail")
+    region = request.form.get("region")
+    imgfile1 = request.files.get("imgfile1")
+    imgfile2 = request.files.get("imgfile2")
+    imgfile3 = request.files.get("imgfile3")
+    
+    filename1 = secure_filename(f"{uuid4().hex}_{imgfile1.filename}")
+    save_path1 = os.path.join(SBOOK_UPLOAD_FOLDER, filename1)
+
+    filename2 = secure_filename(f"{uuid4().hex}_{imgfile2.filename}")
+    save_path2 = os.path.join(SBOOK_UPLOAD_FOLDER, filename2)
+
+    filename3 = secure_filename(f"{uuid4().hex}_{imgfile3.filename}")
+    save_path3 = os.path.join(SBOOK_UPLOAD_FOLDER, filename3)
+        
+    try:
+        imgfile1.save(save_path1)
+        imgfile2.save(save_path2)
+        imgfile3.save(save_path3)
+    except Exception as e:
+        return jsonify({"error": f"파일 저장 실패: {str(e)}"}), 500
+
+    img_url1 = f"/{SBOOK_UPLOAD_FOLDER}/{filename1}"
+    img_url2 = f"/{SBOOK_UPLOAD_FOLDER}/{filename2}"
+    img_url3 = f"/{SBOOK_UPLOAD_FOLDER}/{filename3}"   
+
+    new_sbook = Sbooktrade(
+        sid = sid,
+        title = title,
+        author = author,
+        publish = publish,
+        isbn = isbn,
+        price = price,
+        detail = detail,
+        region = region,
+        img1 = img_url1,
+        img2 = img_url2,
+        img3 = img_url3
+    )
+    db.session.add(new_sbook)
+    db.session.commit()
+
+    return jsonify({"message": "책 추가 완료"}), 201
+
+@test_bp.route("/read-personal/<int:userId>", methods=["GET"])
+def read_personal(userId):
+    exUser = db.session.query(Personal).filter_by(pid = userId).first()
+
+    user = {
+        "name": exUser.name,
+        "birth": exUser.birth,
+        "tel": exUser.tel,
+        "email": exUser.email,
+        "password": exUser.password,
+        "nickname": exUser.nickname,
+        "address": exUser.address,
+        "region": exUser.region,
+        "img": exUser.img,
+        "bankname": exUser.bankname,
+        "bankaccount": exUser.bankaccount,
+        "createAt": exUser.createAt
+    }
+
+    return jsonify({"user": user}), 200
+
+@test_bp.route("/read-commercial/<int:userId>", methods=["GET"])
+def read_commercial(userId):
+    exUser = db.session.query(Commercial).filter_by(cid = userId).first()
+
+    user = {
+        "name": exUser.name,
+        "presidentName": exUser.presidentName,
+        "businessmanName": exUser.businessmanName,
+        "birth": exUser.birth,
+        "tel": exUser.tel,
+        "email": exUser.email,
+        "businessEmail": exUser.businessEmail,
+        "password": exUser.password,
+        "nickname": exUser.nickname,
+        "address": exUser.address,
+        "region": exUser.region,
+        "img": exUser.img,
+        "coNumber": exUser.coNumber,
+        "licence": exUser.licence,
+        "state": exUser.state,
+        "createAt": exUser.createAt
+    }
+
+    return jsonify({"user": user}), 200
+
+@test_bp.route("/read-shop/<int:shopId>", methods=["GET"])
+def read_shop(shopId):
+    exShop = db.session.query(Shop).filter_by(sid = shopId).first()
+
+    shop = {
+        "sid": exShop.sid,
+        "cid": exShop.cid,
+        "presidentName": exShop.presidentName,
+        "businessmanName": exShop.businessmanName,
+        "shopName": exShop.shopName,
+        "shoptel": exShop.shoptel,
+        "businessEmail": exShop.businessEmail,
+        "address": exShop.address,
+        "region": exShop.region,
+        "open": exShop.open,
+        "close": exShop.close,
+        "holiday": exShop.holiday,
+        "shopimg1": exShop.shopimg1,
+        "shopimg2": exShop.shopimg2,
+        "shopimg3": exShop.shopimg3,
+        "etc": exShop.etc,
+        "createAt": exShop.createAt
+    }
+
+    return jsonify({"user": shop}), 200
+
+@test_bp.route("/read-pbook/<int:bookId>", methods=["GET"])
+def read_pbook(bookId):
+    exBook = db.session.query(Pbooktrade).filter_by(bid = bookId).first()
+
+    book = {
+        "bid": exBook.bid,
+        "pid": exBook.pid,
+        "title": exBook.title,
+        "author": exBook.author,
+        "publish": exBook.publish,
+        "isbn": exBook.isbn,
+        "price": exBook.price,
+        "detail": exBook.detail,
+        "region": exBook.region,
+        "img1": exBook.img1,
+        "img2": exBook.img2,
+        "img3": exBook.img3,
+        "createAt": exBook.createAt
+    }
+
+    return jsonify({"user": book}), 200
+
+@test_bp.route("/read-cbook/<int:bookId>", methods=["GET"])
+def read_cbook(bookId):
+    exBook = db.session.query(Cbooktrade).filter_by(bid = bookId).first()
+
+    book = {
+        "bid": exBook.bid,
+        "cid": exBook.cid,
+        "title": exBook.title,
+        "author": exBook.author,
+        "publish": exBook.publish,
+        "isbn": exBook.isbn,
+        "price": exBook.price,
+        "detail": exBook.detail,
+        "region": exBook.region,
+        "img1": exBook.img1,
+        "img2": exBook.img2,
+        "img3": exBook.img3,
+        "createAt": exBook.createAt
+    }
+
+    return jsonify({"user": book}), 200
+
+@test_bp.route("/read-sbook/<int:bookId>", methods=["GET"])
+def read_sbook(bookId):
+    exBook = db.session.query(Sbooktrade).filter_by(bid = bookId).first()
+
+    book = {
+        "bid": exBook.bid,
+        "sid": exBook.sid,
+        "title": exBook.title,
+        "author": exBook.author,
+        "publish": exBook.publish,
+        "isbn": exBook.isbn,
+        "price": exBook.price,
+        "detail": exBook.detail,
+        "region": exBook.region,
+        "img1": exBook.img1,
+        "img2": exBook.img2,
+        "img3": exBook.img3,
+        "createAt": exBook.createAt
+    }
+
+    return jsonify({"user": book}), 200
+
+@test_bp.route("/modify-anr/<int:kind>/<int:userId>", methods=["PUT"])
+def change_anr(kind, userId):
+    data = request.get_json()
+
+    address = data.get("address")
+    region = data.get("region")
+
+    try:
+        kind = int(kind)
+    except (TypeError, ValueError):
+        return jsonify({"error": "유효하지 않은 유형 값입니다."}), 400
+
+    if kind == UserType.PERSONAL.value:
+        exUser = db.session.query(Personal).filter_by(pid = userId).first()
+        exUser.address = address
+        exUser.region = region
+        db.session.commit()
+    elif kind == UserType.COMMERCIAL.value:
+        exUser = db.session.query(Commercial).filter_by(cid = userId).first()
+        exShop = db.session.query(Shop).filter_by(cid = userId).first()
+        exUser.address = address
+        exUser.region = region
+        exShop.address = address
+        exShop.region = region
+        db.session.commit()
+    else:
+        return jsonify({"error": "잘못된 유저 유형"}), 404
+
+    return jsonify({"message": "주소 변경 완료"}), 200
+
+@test_bp.route("/modify-book/<int:kind>/<int:bookId>", methods=["PUT"])
+def change_book(kind, bookId):
+    data = request.get_json()
+
+    region = data.get("region")
+
+    try:
+        kind = int(kind)
+    except (TypeError, ValueError):
+        return jsonify({"error": "유효하지 않은 유형 값입니다."}), 400
+
+    if kind == UserType.PERSONAL.value:
+        book = db.session.query(Pbooktrade).filter_by(bid = bookId).first()
+    elif kind == UserType.COMMERCIAL.value:
+        book = db.session.query(Cbooktrade).filter_by(bid = bookId).first()
+    elif kind == 3:
+        book = db.session.query(Sbooktrade).filter_by(bid = bookId).first()
+
+    else:
+        return jsonify({"error": "잘못된 유저 유형"}), 404
+    
+    book.region = region
+    db.session.commit()
+
+    return jsonify({"message": "주소 변경 완료"}), 200
+
+@test_bp.route("/add-vur", methods=["POST"])
+def add_vur():
+    data = request.get_json()
+    email = data.get("email")
+    authCode = data.get("authCode")
+
+    authCode = int(authCode)
+
+    new_user = Vaild4pur(
+        email = email,
+        authCode = authCode
+    )
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"message": "회원가입 완료"}), 201
+
+@test_bp.route("/add-modiadr", methods=["POST"])
+def add_modiadr():
+    cid = request.form.get("cid")
+    cid = int(cid)
+    name = request.form.get("name")
+    presidentName = request.form.get("presidentName")
+    businessmanName = request.form.get("businessmanName")
+    businessEmail = request.form.get("businessEmail")
+    coNumber = request.form.get("coNumber")
+    address = request.form.get("address")
+    licence = request.files.get("licence")
+    
+    pdf_filename = secure_filename(f"{uuid4().hex}_{licence.filename}")
+    pdf_save_path = os.path.join(LICENCE_UPLOAD_FOLDER, pdf_filename)
+
+    try:
+        licence.save(pdf_save_path)
+    except Exception as e:
+        return jsonify({"error": f"PDF 저장 실패: {str(e)}"}), 500
+
+    pdf_url = f"/{LICENCE_UPLOAD_FOLDER}/{pdf_filename}"
+
+    new_modi_addr_req = Modiaddress(
+        name = name,
+        presidentName = presidentName,
+        businessmanName = businessmanName,
+        businessEmail = businessEmail,
+        coNumber = coNumber,
+        address = address,
+        licence=pdf_url,
+        cid=cid
+    )
+
+    db.session.add(new_modi_addr_req)
+    db.session.commit()
+
+    return jsonify({"message": "업장 변경 신청 완료" }), 201
+
+@test_bp.route("/add-p2p", methods=["POST"])
+def add_p2p():
+    pid = request.form.get("pid")
+    pid = int(pid)
+    bid = request.form.get("bid")
+    bid = int(bid)
+    sellerid = request.form.get("sellerid")
+    sellerid = int(sellerid)
+
+    newRe = Preceipt2p(
+        pid=pid,
+        bid=bid,
+        sellerid=sellerid
+    )
+
+    db.session.add(newRe)
+    db.session.commit()
+
+    return jsonify({"message": "구매 신청 완료" }), 201
+
+@test_bp.route("/add-p2s", methods=["POST"])
+def add_p2s():
+    pid = request.form.get("pid")
+    pid = int(pid)
+    bid = request.form.get("bid")
+    bid = int(bid)
+    shopid = request.form.get("shopid")
+    shopid = int(shopid)
+
+    newRe = Preceipt2s(
+        pid=pid,
+        bid=bid,
+        shopid=shopid
+    )
+
+    db.session.add(newRe)
+    db.session.commit()
+
+    return jsonify({"message": "구매 신청 완료" }), 201
+
+@test_bp.route("/add-c2p", methods=["POST"])
+def add_c2p():
+    cid = request.form.get("cid")
+    cid = int(cid)
+    bid = request.form.get("bid")
+    bid = int(bid)
+    sellerid = request.form.get("sellerid")
+    sellerid = int(sellerid)
+
+    newRe = Creceipt2p(
+        cid=cid,
+        bid=bid,
+        sellerid=sellerid
+    )
+
+    db.session.add(newRe)
+    db.session.commit()
+
+    return jsonify({"message": "구매 신청 완료" }), 201
+
+@test_bp.route("/add-c2s", methods=["POST"])
+def add_c2s():
+    cid = request.form.get("cid")
+    cid = int(cid)
+    bid = request.form.get("bid")
+    bid = int(bid)
+    shopid = request.form.get("shopid")
+    shopid = int(shopid)
+
+    newRe = Creceipt2s(
+        cid=cid,
+        bid=bid,
+        shopid=shopid
+    )
+
+    db.session.add(newRe)
+    db.session.commit()
+
+    return jsonify({"message": "구매 신청 완료" }), 201
+
+@test_bp.route("/read-p2p/<int:pid>", methods=["GET"])
+def read_p2p(pid):
+    pp = db.session.query(Preceipt2p).filter_by(pid = pid).all()
+
+    cs_list = [
+        {   
+            "rid": css.rid,
+            "pid": css.pid,
+            "bid": css.bid,
+            "sellerid": css.sellerid,
+            "state": css.state,
+            "reason": css.reason,
+            "createAt": css.createAt
+        }
+        for css in pp
+    ]
+
+    return jsonify({"cs_list": cs_list }), 200
+
+
+@test_bp.route("/read-p2s/<int:pid>", methods=["GET"])
+def read_p2s(pid):
+    ps = db.session.query(Preceipt2s).filter_by(pid = pid).all()
+
+    cs_list = [
+        {
+            "rid": css.rid,
+            "pid": css.pid,
+            "bid": css.bid,
+            "shopid": css.shopid,
+            "state": css.state,
+            "reason": css.reason,
+            "createAt": css.createAt
+        }
+        for css in ps
+    ]
+
+    return jsonify({"cs_list": cs_list }), 200
+
+@test_bp.route("/read-c2p/<int:cid>", methods=["GET"])
+def read_c2p(cid):
+    cp = db.session.query(Creceipt2p).filter_by(cid = cid).all()
+
+    cs_list = [
+        {
+            "rid": css.rid,
+            "cid": css.cid,
+            "bid": css.bid,
+            "sellerid": css.sellerid,
+            "state": css.state,
+            "reason": css.reason,
+            "createAt": css.createAt
+        }
+        for css in cp
+    ]
+
+    return jsonify({"cs_list": cs_list }), 200
+
+@test_bp.route("/read-c2s/<int:cid>", methods=["GET"])
+def read_c2s(cid):
+    cs = db.session.query(Creceipt2s).filter_by(cid = cid).all()
+
+    cs_list = [
+        {
+            "rid": css.rid,
+            "cid": css.cid,
+            "bid": css.bid,
+            "shopid": css.shopid,
+            "state": css.state,
+            "reason": css.reason,
+            "createAt": css.createAt
+        }
+        for css in cs
+    ]
+
+    return jsonify({"cs_list": cs_list }), 200
+
+@test_bp.route("/read-modiadr/<int:idx>", methods=["GET"])
+def read_modiadr(idx):
+    modi = db.session.query(Modiaddress).filter_by(idx = idx).first()
+
+    modi_info = {
+            "idx": modi.idx,
+            "cid": modi.cid,
+            "name": modi.name,
+            "presidentName": modi.presidentName,
+            "businessmanName": modi.businessmanName,
+            "coNumber": modi.coNumber,
+            "address": modi.address,
+            "licence": modi.licence,
+            "reason": modi.reason,
+            "state": modi.state,
+            "createAt": modi.createAt
+        }
+
+    return jsonify({"modi": modi_info }), 200
+
+@test_bp.route("/add-pbank/<int:pid>", methods=["POST"])
+def p_bank(pid):
+    bankname = request.form.get("bankname")
+    bankaccount = request.form.get("bankaccount")
+
+    user = db.session.query(Personal).filter_by(pid = pid).first()
+
+    if not user:
+        return jsonify({"error": "유저 없음" }), 404
+
+    user.bankname = bankname
+    user.bankaccount = bankaccount
+
+    db.session.commit()
+    
+    return jsonify({"success": "성공" }), 200
+
+@test_bp.route("/add-cbank/<int:cid>", methods=["POST"])
+def c_bank(cid):
+    bankname = request.form.get("bankname")
+    bankaccount = request.form.get("bankaccount")
+    accountPhoto = request.files.get("accountPhoto")
+
+    user = db.session.query(Commercial).filter_by(cid = cid).first()
+
+    if not user:
+        return jsonify({"error": "유저 없음" }), 404
+    
+    account_filename = secure_filename(f"{uuid4().hex}_{accountPhoto.filename}")
+    account_save_path = os.path.join(BANK_UPLOAD_FOLDER, account_filename)
+
+    try:
+        accountPhoto.save(account_save_path)
+    except Exception as e:
+        return jsonify({"error": f"통장 사본 저장 실패: {str(e)}"}), 500
+
+    account_url = f"/{BANK_UPLOAD_FOLDER}/{account_filename}"
+
+    user.bankname = bankname
+    user.bankaccount = bankaccount
+    user.accountPhoto = account_url
+
+    comcert = db.session.query(Commercialcert).filter_by(cid=cid).all()
+
+    for comc in comcert:
+        comc.bankname = bankname
+        comc.bankaccount = bankaccount
+        comc.accountPhoto = account_url
+
+    db.session.commit()
+    
+    return jsonify({"success": "성공", "photo_url": account_url}), 200
+
+@test_bp.route("/check-pbank", methods=["GET"])
+def isPbank():
+    users = db.session.query(Personal).all()
+
+    for user in users:
+        if not user.bankname:
+            return jsonify({"fail": user.pid }), 200
+        
+        if not user.bankaccount:
+            return jsonify({"fail2": user.pid }), 200
+        
+    return jsonify({"success": "성공" }), 200
+
+@test_bp.route("/check-cbank", methods=["GET"])
+def isCbank():
+    users = db.session.query(Commercial).all()
+
+    for user in users:
+        if not user.bankname:
+            return jsonify({"fail": user.cid }), 200
+        
+        if not user.bankaccount:
+            return jsonify({"fail2": user.cid }), 200
+        
+        if not user.accountPhoto:
+            return jsonify({"fail3": user.cid }), 200
+        
+    return jsonify({"success": "성공" }), 200
+
+@test_bp.route("/add-pbankname/<int:pid>", methods=["POST"])
+def p_bankname(pid):
+    bankname = request.form.get("bankname")
+
+    user = db.session.query(Personal).filter_by(pid = pid).first()
+
+    if not user:
+        return jsonify({"error": "유저 없음" }), 404
+
+    user.bankname = bankname
+
+    db.session.commit()
+    
+    return jsonify({"success": "성공" }), 200
+
+@test_bp.route("/add-cbankname/<int:cid>", methods=["POST"])
+def c_bankname(cid):
+    bankname = request.form.get("bankname")
+
+    user = db.session.query(Commercial).filter_by(cid = cid).first()
+
+    if not user:
+        return jsonify({"error": "유저 없음" }), 404
+
+    user.bankname = bankname
+
+    comcert = db.session.query(Commercialcert).filter_by(cid=cid).all()
+
+    for comc in comcert:
+        comc.bankname = bankname
+
+    db.session.commit()
+    
+    return jsonify({"success": "성공"}), 200

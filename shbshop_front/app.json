@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "헌책방",
+    "slug": "pro_app",
+    "version": "1.0.0",
+    "scheme": "myapp",
+    "orientation": "portrait",
+    "icon": "./assets/app_icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.jeonsae01.pro_app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "API_URL": "https://shbshop.store",
+      "BUY_URL": "https://shbshop.store",
+      "eas": {
+        "projectId": "c493c92d-8e82-4442-bab1-ea6a1489f7b1"
+      }
+    }
+  }
+}
